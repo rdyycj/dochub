@@ -53,8 +53,9 @@ export class FileWatcher extends EventEmitter {
       }
     });
 
-    this.watcher.on('error', (err: Error) => {
-      console.error('[FileWatcher] Monitor error:', err.message);
+    this.watcher.on('error', (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[FileWatcher] Monitor error:', msg);
     });
   }
 
