@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCategories } from '../hooks/useIPC';
-import { Category } from '../../../shared/types';
+import { Category } from '../../shared/types';
 
 interface Props {
   selectedId: number | null | undefined;

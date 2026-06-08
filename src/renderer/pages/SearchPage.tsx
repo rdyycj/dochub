@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import SearchBar from '../components/SearchBar';
 import { useSearch } from '../hooks/useIPC';
-import { SearchResult } from '../../../shared/types';
+import { SearchResult } from '../../shared/types';
 
 function highlightHtml(text: string): string {
   return text.replace(/<mark>/g, '<mark class="bg-yellow-200">');

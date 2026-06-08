@@ -17,12 +17,12 @@ const api = {
   onStatusUpdate: (callback: (status: IndexStatus) => void) => {
     const handler = (_event: any, status: IndexStatus) => callback(status);
     ipcRenderer.on(IPC.STATUS_UPDATE, handler);
-    return () => ipcRenderer.removeListener(IPC.STATUS_UPDATE, handler);
+    return () => { ipcRenderer.removeListener(IPC.STATUS_UPDATE, handler); };
   },
   onFileIndexed: (callback: (file: FileInfo) => void) => {
     const handler = (_event: any, file: FileInfo) => callback(file);
     ipcRenderer.on(IPC.FILE_INDEXED, handler);
-    return () => ipcRenderer.removeListener(IPC.FILE_INDEXED, handler);
+    return () => { ipcRenderer.removeListener(IPC.FILE_INDEXED, handler); };
   },
 };
 

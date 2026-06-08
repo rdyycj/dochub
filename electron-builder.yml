@@ -1,0 +1,28 @@
+appId: com.dochub.app
+productName: DocHub
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - assets/**/*
+
+extraResources:
+  - from: node_modules/nodejieba/dict
+    to: dict
+
+win:
+  target: nsis
+  icon: assets/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DocHub
+
+asar: true
+compression: maximum

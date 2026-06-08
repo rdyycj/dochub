@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FileInfo, Category, IndexStatus, SearchResult, SearchQuery } from '../../../shared/types';
+import { FileInfo, Category, IndexStatus, SearchResult, SearchQuery } from '../../shared/types';
 
 export function useCategories() {
   const [categories, setCategories] = useState<Category[]>([]);

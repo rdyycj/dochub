@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useCategories } from '../hooks/useIPC';
 import RuleEditor from '../components/RuleEditor';
-import { Category } from '../../../shared/types';
+import { Category } from '../../shared/types';
 
 const SettingsPage: React.FC = () => {
   const { categories, refresh } = useCategories();
@@ -15,6 +15,7 @@ const SettingsPage: React.FC = () => {
       operator: 'contains' as const,
       value: [kw],
       weight: 1,
+      enabled: true,
     }));
     await window.docHub.saveRules(selectedCat.id, rules);
     alert('规则已保存');
