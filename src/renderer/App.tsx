@@ -1,10 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Layout from './components/Layout';
+import BrowsePage from './pages/BrowsePage';
+import SearchPage from './pages/SearchPage';
+import SettingsPage from './pages/SettingsPage';
 
 const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState('browse');
+
   return (
-    <div className="h-screen flex items-center justify-center">
-      <h1 className="text-2xl font-bold">DocHub</h1>
-    </div>
+    <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+      {activeTab === 'browse' && <BrowsePage />}
+      {activeTab === 'search' && <SearchPage />}
+      {activeTab === 'settings' && <SettingsPage />}
+    </Layout>
   );
 };
 
