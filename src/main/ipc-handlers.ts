@@ -1,4 +1,6 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, shell, dialog } from 'electron';
+import * as path from 'path';
+import * as fs from 'fs';
 import { DocDatabase } from './db';
 import { classify } from './classifier';
 import { searchFiles } from './search';
@@ -71,6 +73,33 @@ export function registerIpcHandlers(
     if (file) {
       db.updateFileStatus(fileId, 'pending');
       enqueue.enqueue(file.path, file.id, file.ext);
+    }
+  });
+
+  // ---- File open ----
+  ipcMain.handle(IPC.FILE_OPEN, async (_event, { path: filePath }) => {
+    const result = await shell.openPath(filePath);
+    if (result) {
+      console.error(`[DocHub] openPath failed: ${result} - ${filePath}`);
+      return { success: false, error: result };
+    }
+    return { success: true };
+  });
+
+  // ---- File export ----
+  ipcMain.handle(IPC.FILE_EXPORT, async (_event, { sourcePath }) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: path.basename(sourcePath),
+      filters: [{ name: 'All Files', extensions: ['*'] }],
+    });
+    if (canceled || !filePath) return { success: false, canceled: true };
+
+    try {
+      fs.copyFileSync(sourcePath, filePath);
+      return { success: true, destPath: filePath };
+    } catch (e: any) {
+      console.error(`[DocHub] exportFile failed:`, e.message);
+      return { success: false, error: e.message };
     }
   });
 }
