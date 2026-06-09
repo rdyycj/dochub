@@ -18,7 +18,7 @@ const Layout: React.FC<Props> = ({ children, activeTab, onTabChange }) => {
     <div className="h-screen flex flex-col">
       {/* Top navigation */}
       <div className="flex items-center bg-gray-900 text-white px-4 h-10 gap-1">
-        <span className="font-bold text-sm mr-4">DocHub</span>
+        <span className="font-bold text-sm mr-4">文档中枢</span>
         {tabs.map((tab) => (
           <button
             key={tab.id}

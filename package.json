@@ -2,7 +2,7 @@
   "name": "doc-hub",
   "version": "1.0.0",
   "description": "DocHub — file auto-categorization and full-text search desktop app",
-  "main": "dist/main/index.js",
+  "main": "dist/main/main/index.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:renderer": "vite",
@@ -37,9 +37,10 @@
     ]
   },
   "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.10.0",
-    "chokidar": "^5.0.0",
-    "electron": "^42.3.3",
+    "chokidar": "^4.0.3",
+    "electron": "^39.8.10",
     "js-yaml": "^4.2.0",
     "mammoth": "^1.12.0",
     "nodejieba": "^3.5.8",
@@ -49,7 +50,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.9.2",
     "@types/react": "^19.2.17",

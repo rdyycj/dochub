@@ -1,12 +1,12 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import { DocDatabase } from './db';
 import { FileWatcher } from './watcher';
-import { Scheduler } from './scheduler';
 import { classify } from './classifier';
 import { registerIpcHandlers } from './ipc-handlers';
+import { parseFileDirect } from './parser';
 import { ParserResult, AppConfig } from '../shared/types';
 import { DEFAULT_CATEGORIES, DEFAULT_CONFIG } from '../shared/constants';
 import { IPC } from '../shared/constants';
@@ -14,14 +14,46 @@ import { IPC } from '../shared/constants';
 let mainWindow: BrowserWindow | null = null;
 let db: DocDatabase;
 let watcher: FileWatcher;
-let scheduler: Scheduler;
 let config: AppConfig;
 
-// ---- Data directories ----
-const appDataDir = path.join(app.getPath('appData'), 'doc-hub');
-const dbPath = path.join(appDataDir, 'index.db');
-const configPath = path.join(appDataDir, 'config.yaml');
-const logDir = path.join(appDataDir, 'logs');
+// Async parse queue (no worker threads)
+const parseQueue: { filePath: string; fileId: number; ext: string }[] = [];
+let parsing = false;
+
+async function processQueue(): Promise<void> {
+  if (parsing || parseQueue.length === 0) return;
+  parsing = true;
+  while (parseQueue.length > 0) {
+    const task = parseQueue.shift()!;
+    try {
+      const result = await parseFileDirect(task.filePath, task.ext);
+      handleParseResult({ fileId: task.fileId, ...result });
+    } catch (e: any) {
+      console.error(`[DocHub] Parse error ${task.filePath}:`, e.message);
+      db.updateFileStatus(task.fileId, 'error');
+    }
+    await new Promise(r => setTimeout(r, 0));
+  }
+  parsing = false;
+}
+
+function enqueueParse(filePath: string, fileId: number, ext: string): void {
+  parseQueue.push({ filePath, fileId, ext });
+  processQueue();
+}
+
+// ---- Data directories (initialized in app.whenReady) ----
+let appDataDir: string;
+let dbPath: string;
+let configPath: string;
+let logDir: string;
+
+function initPaths(): void {
+  appDataDir = path.join(app.getPath('appData'), 'doc-hub');
+  dbPath = path.join(appDataDir, 'index.db');
+  configPath = path.join(appDataDir, 'config.yaml');
+  logDir = path.join(appDataDir, 'logs');
+}
 
 function ensureDirectories(): void {
   for (const dir of [appDataDir, logDir]) {
@@ -44,7 +76,7 @@ watch:
   debounce_ms: 2000
 
 classifier:
-  threshold: 5
+  threshold: 1
   content_sample_bytes: 50000
 
 index:
@@ -95,7 +127,7 @@ function seedDefaultCategories(): void {
         field: 'both',
         operator: 'contains',
         value: [kw],
-        weight: 1,
+        weight: 5,
       });
     }
   }
@@ -105,43 +137,82 @@ function seedDefaultCategories(): void {
 function handleParseResult(result: ParserResult): void {
   const { fileId, text, tokens, error, encrypted } = result;
 
-  if (error) {
-    db.updateFileStatus(fileId, 'error');
-    return;
-  }
-
-  const searchableContent = tokens.join(' ');
+  // Even on error, try to classify by filename
+  const searchableContent = tokens.length > 0 ? tokens.join(' ') : '';
   const filename = db.getFileById(fileId)?.name || '';
 
   const contentSample = text.slice(0, config.classifier.contentSampleBytes);
   const categories = db.getAllCategories();
   const allRules = db.getAllEnabledRules().map((r: any) => ({
-    ...r,
+    id: r.id,
+    categoryId: r.category_id,
+    field: r.field,
+    operator: r.operator,
     value: JSON.parse(r.value),
+    weight: r.weight,
+    enabled: r.enabled !== 0,
   }));
 
   const classification = classify(filename, contentSample, categories, allRules, config.classifier.threshold);
 
   db.setFileCategory(fileId, classification.categoryId);
-  db.upsertFts(fileId, searchableContent, filename);
-  db.updateFileStatus(fileId, 'parsed');
+  if (searchableContent) {
+    db.upsertFts(fileId, searchableContent, filename);
+  }
+  // Mark as parsed (even if content extraction partially failed — we still classified by filename)
+  db.updateFileStatus(fileId, encrypted ? 'error' : 'parsed');
 
-  // Push to renderer
-  const fileInfo = db.getFileById(fileId);
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  // Push to renderer (map snake_case to camelCase)
+  const row = db.getFileById(fileId);
+  if (row && mainWindow && !mainWindow.isDestroyed()) {
+    const fileInfo = {
+      id: row.id, path: row.path, name: row.name, ext: row.ext, size: row.size,
+      modifiedAt: row.modified_at, contentHash: row.content_hash,
+      categoryId: row.category_id, indexedAt: row.indexed_at, status: row.status,
+    };
     mainWindow.webContents.send(IPC.FILE_INDEXED, fileInfo);
     const status = db.getStatus();
     mainWindow.webContents.send(IPC.STATUS_UPDATE, status);
   }
 }
 
+function scanDirectory(dir: string): void {
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const dirent = entry as fs.Dirent & { parentPath?: string; path?: string };
+    const filePath = path.join(dirent.parentPath || dirent.path || dir, entry.name);
+    const ext = path.extname(entry.name).toLowerCase();
+    if (!['.pdf', '.docx', '.xlsx', '.pptx'].includes(ext)) continue;
+    try {
+      const stat = fs.statSync(filePath);
+      const fileBuffer: Buffer = fs.readFileSync(filePath).slice(0, 65536);
+      const contentHash = require('crypto').createHash('md5').update(fileBuffer).digest('hex');
+      const fileId = db.upsertFile({
+        path: filePath,
+        name: entry.name,
+        ext,
+        size: stat.size,
+        modifiedAt: stat.mtimeMs,
+        contentHash,
+      });
+      enqueueParse(filePath, fileId, ext);
+      console.log(`[DocHub] Scanned: ${entry.name}`);
+    } catch (e: any) {
+      console.error(`[DocHub] Scan error ${entry.name}:`, e.message);
+    }
+  }
+}
+
 function onFileChanged(payload: { path: string; event: string }): void {
+  console.log(`[DocHub] File event: ${payload.event} - ${payload.path}`);
   if (payload.event === 'unlink') {
     return;
   }
 
-  const ext = path.extname(payload.path).toLowerCase();
   const name = path.basename(payload.path);
+  const ext = path.extname(payload.path).toLowerCase();
   let size = 0;
   let mtime = Date.now();
   let contentHash = '';
@@ -166,7 +237,7 @@ function onFileChanged(payload: { path: string; event: string }): void {
     contentHash,
   });
 
-  scheduler.enqueue({ filePath: payload.path, fileId, ext });
+  enqueueParse(payload.path, fileId, ext);
 }
 
 function createWindow(): void {
@@ -175,7 +246,7 @@ function createWindow(): void {
     height: 860,
     minWidth: 900,
     minHeight: 600,
-    title: 'DocHub',
+    title: '文档中枢',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -186,23 +257,45 @@ function createWindow(): void {
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
   }
 }
 
 // ---- App lifecycle ----
-app.whenReady().then(() => {
+// Enable clipboard shortcuts (Ctrl+C/V/X/A) in the app
+const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+  {
+    label: '编辑',
+    submenu: [
+      { role: 'undo', label: '撤销' },
+      { role: 'redo', label: '重做' },
+      { type: 'separator' },
+      { role: 'cut', label: '剪切' },
+      { role: 'copy', label: '复制' },
+      { role: 'paste', label: '粘贴' },
+      { role: 'selectAll', label: '全选' },
+    ],
+  },
+  {
+    label: '视图',
+    submenu: [
+      { role: 'reload', label: '刷新' },
+      { role: 'toggleDevTools', label: '开发者工具' },
+      { type: 'separator' },
+      { role: 'resetZoom', label: '重置缩放' },
+      { role: 'zoomIn', label: '放大' },
+      { role: 'zoomOut', label: '缩小' },
+    ],
+  },
+];
+app.whenReady().then(async () => {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
+  initPaths();
   ensureDirectories();
   saveDefaultConfig();
   config = loadConfig();
   db = new DocDatabase(dbPath);
   seedDefaultCategories();
-
-  scheduler = new Scheduler({
-    poolSize: config.worker.poolSize,
-    recycleAfter: config.worker.recycleAfter,
-  });
-  scheduler.on('task-done', handleParseResult);
 
   watcher = new FileWatcher({
     paths: config.watch.paths,
@@ -211,11 +304,19 @@ app.whenReady().then(() => {
   });
   watcher.on('file-changed', onFileChanged);
 
-  registerIpcHandlers(db, watcher, scheduler, config);
+  registerIpcHandlers(db, watcher, { enqueue: enqueueParse }, config, scanDirectory);
   createWindow();
 
   if (config.watch.paths.length > 0) {
     watcher.start();
+  }
+
+  // AUTO-TEST: scan test directory
+  const testDir = 'C:/Users/Administrator/Desktop/DocHub测试';
+  if (fs.existsSync(testDir)) {
+    console.log(`[DocHub] Auto-scanning test directory: ${testDir}`);
+    scanDirectory(testDir);
+    watcher.updatePaths([testDir]);
   }
 });
 
@@ -228,7 +329,6 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
-  scheduler?.shutdown();
   watcher?.stop();
   db?.close();
 });

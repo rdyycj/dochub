@@ -48,6 +48,10 @@ async function parseFile(filePath: string, ext: string): Promise<{ text: string;
       }
     }
 
+    case '.doc': {
+      return { text: '', error: '旧版Word格式(.doc)，暂不支持内容提取，仅按文件名分类' };
+    }
+
     case '.docx': {
       try {
         const buffer = fs.readFileSync(filePath);
@@ -58,6 +62,7 @@ async function parseFile(filePath: string, ext: string): Promise<{ text: string;
       }
     }
 
+    case '.xls':
     case '.xlsx': {
       try {
         const workbook = XLSX.readFile(filePath);

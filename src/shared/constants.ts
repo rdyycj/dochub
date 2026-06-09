@@ -14,14 +14,14 @@ export const IPC = {
 } as const;
 
 // Supported file extensions
-export const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.xlsx', '.pptx'];
+export const SUPPORTED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.pptx'];
 
 // Excluded patterns for watcher
 export const DEFAULT_EXCLUDE = ['**/~$*', '**/.~*', '**/Thumbs.db'];
 
 // Default config values
 export const DEFAULT_CONFIG = {
-  CLASSIFIER_THRESHOLD: 5,
+  CLASSIFIER_THRESHOLD: 1,
   CONTENT_SAMPLE_BYTES: 50000,
   MAX_FILE_MB: 100,
   DEBOUNCE_MS: 2000,

@@ -3,14 +3,14 @@ import { DocDatabase } from './db';
 import { classify } from './classifier';
 import { searchFiles } from './search';
 import { FileWatcher } from './watcher';
-import { Scheduler } from './scheduler';
 import { IPC } from '../shared/constants';
 
 export function registerIpcHandlers(
   db: DocDatabase,
   watcher: FileWatcher,
-  scheduler: Scheduler,
-  config: any
+  enqueue: { enqueue: (path: string, id: number, ext: string) => void },
+  config: any,
+  scanDirectory: (dir: string) => void
 ): void {
   // ---- Search ----
   ipcMain.handle(IPC.SEARCH_QUERY, (_event, query) => {
@@ -19,12 +19,36 @@ export function registerIpcHandlers(
 
   // ---- Files list ----
   ipcMain.handle(IPC.FILES_LIST, (_event, { categoryId, page, pageSize }) => {
-    return db.getFilesByCategory(categoryId, page, pageSize);
+    const result = db.getFilesByCategory(categoryId, page, pageSize);
+    return {
+      files: result.files.map((r: any) => ({
+        id: r.id,
+        path: r.path,
+        name: r.name,
+        ext: r.ext,
+        size: r.size,
+        modifiedAt: r.modified_at,
+        contentHash: r.content_hash,
+        categoryId: r.category_id,
+        indexedAt: r.indexed_at,
+        status: r.status,
+      })),
+      total: result.total,
+    };
   });
 
   // ---- Categories ----
   ipcMain.handle(IPC.CATEGORIES_LIST, () => {
-    return db.getAllCategories();
+    const rows = db.getAllCategories();
+    // Map snake_case DB columns to camelCase for frontend
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      parentId: r.parent_id,
+      icon: r.icon,
+      color: r.color,
+      priority: r.priority,
+    }));
   });
 
   // ---- Rules ----
@@ -35,6 +59,10 @@ export function registerIpcHandlers(
   // ---- Watch start ----
   ipcMain.handle(IPC.WATCH_START, (_event, { directories }) => {
     watcher.updatePaths(directories);
+    // Do initial scan of existing files
+    for (const dir of directories) {
+      scanDirectory(dir);
+    }
   });
 
   // ---- File retry ----
@@ -42,11 +70,7 @@ export function registerIpcHandlers(
     const file = db.getFileById(fileId);
     if (file) {
       db.updateFileStatus(fileId, 'pending');
-      scheduler.enqueue({
-        filePath: file.path,
-        fileId: file.id,
-        ext: file.ext,
-      });
+      enqueue.enqueue(file.path, file.id, file.ext);
     }
   });
 }
