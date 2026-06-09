@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "bash": [
+      "npm rebuild:*",
+      "npm run dev:renderer*",
+      "npx vitest:*",
+      "python e2e/*",
+      "python C:/Users/Administrator/.claude/plugins/cache/anthropic-agent-skills/example-skills/*/skills/webapp-testing/scripts/with_server.py*"
+    ]
+  }
+}
