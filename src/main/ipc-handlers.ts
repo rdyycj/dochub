@@ -12,7 +12,8 @@ export function registerIpcHandlers(
   watcher: FileWatcher,
   enqueue: { enqueue: (path: string, id: number, ext: string) => void },
   config: any,
-  scanDirectory: (dir: string) => void
+  scanDirectory: (dir: string) => void,
+  watchedPaths: string[]
 ): void {
   // ---- Search ----
   ipcMain.handle(IPC.SEARCH_QUERY, (_event, query) => {
@@ -60,11 +61,18 @@ export function registerIpcHandlers(
 
   // ---- Watch start ----
   ipcMain.handle(IPC.WATCH_START, (_event, { directories }) => {
-    watcher.updatePaths(directories);
-    // Do initial scan of existing files
-    for (const dir of directories) {
+    // Merge with existing watched paths
+    const newDirs = directories.filter((d: string) => !watchedPaths.includes(d));
+    for (const d of directories) {
+      if (!watchedPaths.includes(d)) watchedPaths.push(d);
+    }
+    // Update watcher with all paths
+    watcher.updatePaths([...watchedPaths]);
+    // Only scan NEW directories
+    for (const dir of newDirs) {
       scanDirectory(dir);
     }
+    return [...watchedPaths]; // Return full list to frontend
   });
 
   // ---- File retry ----

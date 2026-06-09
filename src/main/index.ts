@@ -15,6 +15,7 @@ let mainWindow: BrowserWindow | null = null;
 let db: DocDatabase;
 let watcher: FileWatcher;
 let config: AppConfig;
+const watchedPaths: string[] = [];
 
 // Async parse queue (no worker threads)
 const parseQueue: { filePath: string; fileId: number; ext: string }[] = [];
@@ -27,7 +28,12 @@ async function processQueue(): Promise<void> {
     const task = parseQueue.shift()!;
     try {
       const result = await parseFileDirect(task.filePath, task.ext);
-      handleParseResult({ fileId: task.fileId, ...result });
+      try {
+        handleParseResult({ fileId: task.fileId, ...result });
+      } catch (e2: any) {
+        console.error(`[DocHub] Classify error ${task.filePath}:`, e2.message);
+        db.updateFileStatus(task.fileId, 'error');
+      }
     } catch (e: any) {
       console.error(`[DocHub] Parse error ${task.filePath}:`, e.message);
       db.updateFileStatus(task.fileId, 'error');
@@ -304,7 +310,7 @@ app.whenReady().then(async () => {
   });
   watcher.on('file-changed', onFileChanged);
 
-  registerIpcHandlers(db, watcher, { enqueue: enqueueParse }, config, scanDirectory);
+  registerIpcHandlers(db, watcher, { enqueue: enqueueParse }, config, scanDirectory, watchedPaths);
   createWindow();
 
   if (config.watch.paths.length > 0) {

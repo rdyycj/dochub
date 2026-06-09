@@ -27,8 +27,9 @@ const SettingsPage: React.FC = () => {
   const handleWatchDirs = async () => {
     const dirs = watchDirs.split(/[;\n]+/).map((d) => d.trim()).filter(Boolean);
     if (dirs.length > 0) {
-      await window.docHub.startWatch(dirs);
-      alert(`已开始监控 ${dirs.length} 个目录`);
+      const merged: string[] = await window.docHub.startWatch(dirs);
+      setWatchDirs(merged.join('\n'));
+      alert(`已开始监控 ${merged.length} 个目录`);
     } else {
       alert('请先输入要监控的目录路径');
     }
