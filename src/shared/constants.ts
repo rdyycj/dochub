@@ -7,6 +7,8 @@ export const IPC = {
   RULES_SAVE: 'rules:save',
   WATCH_START: 'watch:start',
   FILE_RETRY: 'file:retry',
+  FILE_OPEN: 'file:open',
+  FILE_EXPORT: 'file:export',
 
   // Main -> Renderer (send)
   STATUS_UPDATE: 'status:update',

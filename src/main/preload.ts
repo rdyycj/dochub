@@ -8,6 +8,8 @@ const IPC = {
   RULES_SAVE: 'rules:save',
   WATCH_START: 'watch:start',
   FILE_RETRY: 'file:retry',
+  FILE_OPEN: 'file:open',
+  FILE_EXPORT: 'file:export',
   STATUS_UPDATE: 'status:update',
   FILE_INDEXED: 'file:indexed',
 } as const;
@@ -24,6 +26,8 @@ const api = {
     ipcRenderer.invoke(IPC.FILE_RETRY, { fileId }),
   // Resolve File object path from drag-and-drop
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  openFile: (path: string) => ipcRenderer.invoke(IPC.FILE_OPEN, { path }),
+  exportFile: (sourcePath: string) => ipcRenderer.invoke(IPC.FILE_EXPORT, { sourcePath }),
 
   onStatusUpdate: (callback: (status: any) => void) => {
     const handler = (_event: any, status: any) => callback(status);
