@@ -29,6 +29,25 @@ export function useFiles(categoryId?: number | null, page = 1, pageSize = 50) {
   return { files, total };
 }
 
+export function useFilesPaginated(categoryId?: number | null, pageSize = 200) {
+  const [files, setFiles] = useState<FileInfo[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  // Load page
+  useEffect(() => {
+    setLoading(true);
+    window.docHub.listFiles({ categoryId, page, pageSize }).then((res: any) => {
+      setFiles(res.files);
+      setTotal(res.total);
+      setLoading(false);
+    });
+  }, [categoryId, page, pageSize]);
+
+  return { files, total, loading, page, setPage, pageSize };
+}
+
 export function useStatus() {
   const [status, setStatus] = useState<IndexStatus>({ indexed: 0, pending: 0, error: 0 });
 

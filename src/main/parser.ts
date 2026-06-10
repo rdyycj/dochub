@@ -52,8 +52,17 @@ export async function parseFileDirect(filePath: string, ext: string): Promise<Om
       break;
     }
 
-    case '.doc':
-      return { text: '', tokens: [], error: '旧版Word(.doc)，仅按文件名分类' };
+    case '.doc': {
+      try {
+        const WordExtractor = require('word-extractor');
+        const extractor = new WordExtractor();
+        const doc = await extractor.extract(filePath);
+        text = doc.getBody();
+      } catch (e: any) {
+        return { text: '', tokens: [], error: `Word解析失败: ${e.message}` };
+      }
+      break;
+    }
 
     case '.docx': {
       try {

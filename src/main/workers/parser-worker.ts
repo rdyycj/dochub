@@ -49,7 +49,14 @@ async function parseFile(filePath: string, ext: string): Promise<{ text: string;
     }
 
     case '.doc': {
-      return { text: '', error: '旧版Word格式(.doc)，暂不支持内容提取，仅按文件名分类' };
+      try {
+        const WordExtractor = require('word-extractor');
+        const extractor = new WordExtractor();
+        const doc = await extractor.extract(filePath);
+        return { text: doc.getBody() };
+      } catch (e: any) {
+        return { text: '', error: `Word(.doc)解析失败: ${e.message}` };
+      }
     }
 
     case '.docx': {

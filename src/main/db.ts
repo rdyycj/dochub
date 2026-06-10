@@ -23,9 +23,13 @@ export class DocDatabase {
     // Add content_preview column if upgrading from older schema
     try {
       this.db.exec('ALTER TABLE files ADD COLUMN content_preview TEXT DEFAULT \'\'');
-    } catch {
-      // Column already exists — ignore
-    }
+    } catch { /* already exists */ }
+    // Ensure indexes exist (CREATE INDEX IF NOT EXISTS is safe)
+    try {
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_files_modified ON files(modified_at)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_files_category ON files(category_id)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_files_status ON files(status)');
+    } catch { /* ignore */ }
   }
 
   private initSchema(): void {
@@ -62,6 +66,10 @@ export class DocDatabase {
         weight INTEGER DEFAULT 1,
         enabled INTEGER DEFAULT 1
       );
+
+      CREATE INDEX IF NOT EXISTS idx_files_modified ON files(modified_at);
+      CREATE INDEX IF NOT EXISTS idx_files_category ON files(category_id);
+      CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
 
       CREATE VIRTUAL TABLE IF NOT EXISTS fts_index USING fts5(
         file_id UNINDEXED,
@@ -112,7 +120,9 @@ export class DocDatabase {
 
   getFilesByCategory(categoryId: number | null | undefined, page: number = 1, pageSize: number = 50): { files: any[]; total: number } {
     const offset = (page - 1) * pageSize;
-    let query = 'SELECT * FROM files';
+    // Skip content_preview — it's up to 50KB per row, would freeze IPC
+    const cols = 'id, path, name, ext, size, modified_at, content_hash, category_id, indexed_at, status';
+    let query = `SELECT ${cols} FROM files`;
     let countQuery = 'SELECT COUNT(*) as total FROM files';
     const params: any[] = [];
     const countParams: any[] = [];

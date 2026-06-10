@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/react-window": "^1.8.8",
     "better-sqlite3": "^12.10.0",
     "chokidar": "^4.0.3",
     "electron": "^39.8.10",
@@ -46,6 +47,8 @@
     "nodejieba": "^3.5.8",
     "pdf-parse": "^2.4.5",
     "pptx-parser": "^1.1.7-beta.9",
+    "react-window": "^2.2.7",
+    "word-extractor": "^1.0.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

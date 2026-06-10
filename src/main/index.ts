@@ -7,8 +7,8 @@ import { FileWatcher } from './watcher';
 import { classify } from './classifier';
 import { registerIpcHandlers } from './ipc-handlers';
 import { parseFileDirect } from './parser';
-import { ParserResult, AppConfig } from '../shared/types';
-import { DEFAULT_CATEGORIES, DEFAULT_CONFIG } from '../shared/constants';
+import { ParserResult, AppConfig, Rule } from '../shared/types';
+import { DEFAULT_CATEGORIES, DEFAULT_CONFIG, SUPPORTED_EXTENSIONS } from '../shared/constants';
 import { IPC } from '../shared/constants';
 
 let mainWindow: BrowserWindow | null = null;
@@ -149,15 +149,7 @@ function handleParseResult(result: ParserResult): void {
 
   const contentSample = text.slice(0, config.classifier.contentSampleBytes);
   const categories = db.getAllCategories();
-  const allRules = db.getAllEnabledRules().map((r: any) => ({
-    id: r.id,
-    categoryId: r.category_id,
-    field: r.field,
-    operator: r.operator,
-    value: JSON.parse(r.value),
-    weight: r.weight,
-    enabled: r.enabled !== 0,
-  }));
+  const allRules = getRules();
 
   const classification = classify(filename, contentSample, categories, allRules, config.classifier.threshold);
 
@@ -185,6 +177,18 @@ function handleParseResult(result: ParserResult): void {
   }
 }
 
+function getRules(): Rule[] {
+  return db.getAllEnabledRules().map((r: any) => ({
+    id: r.id,
+    categoryId: r.category_id,
+    field: r.field,
+    operator: r.operator,
+    value: JSON.parse(r.value),
+    weight: r.weight,
+    enabled: r.enabled !== 0,
+  }));
+}
+
 async function scanDirectory(dir: string): Promise<void> {
   if (!fs.existsSync(dir)) return;
   const entries = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
@@ -197,7 +201,7 @@ async function scanDirectory(dir: string): Promise<void> {
       const dirent = entry as fs.Dirent & { parentPath?: string; path?: string };
       const filePath = path.join(dirent.parentPath || dirent.path || dir, entry.name);
       const ext = path.extname(entry.name).toLowerCase();
-      if (!['.pdf', '.docx', '.xlsx', '.pptx'].includes(ext)) return;
+      if (!SUPPORTED_EXTENSIONS.includes(ext)) return;
 
       try {
         const stat = await fs.promises.stat(filePath);
@@ -334,15 +338,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(IPC.RECLASSIFY_ALL, async () => {
     const files = db.getAllFiles();
     const categories = db.getAllCategories();
-    const allRules = db.getAllEnabledRules().map((r: any) => ({
-      id: r.id,
-      categoryId: r.category_id,
-      field: r.field,
-      operator: r.operator,
-      value: JSON.parse(r.value),
-      weight: r.weight,
-      enabled: r.enabled !== 0,
-    }));
+    const allRules = getRules();
 
     let changed = 0;
     for (const f of files) {

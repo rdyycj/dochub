@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import FileList from '../components/FileList';
 import SearchBar from '../components/SearchBar';
-import { useFiles, useSearch } from '../hooks/useIPC';
+import { useFilesPaginated, useSearch } from '../hooks/useIPC';
 import { SearchResult } from '../../shared/types';
 
 function highlightHtml(text: string): string {
@@ -14,25 +14,21 @@ interface Props {
 }
 
 const BrowsePage: React.FC<Props> = ({ selectedCategory, onCategorySelect }) => {
-  const [page] = useState(1);
-  const { files, total: fileTotal } = useFiles(selectedCategory, page);
-  const { results, total: searchTotal, loading, doSearch } = useSearch();
+  const { files, total: fileTotal, loading: filesLoading, page, setPage, pageSize } = useFilesPaginated(selectedCategory, 200);
+  const { results, total: searchTotal, loading: searchLoading, doSearch } = useSearch();
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<SearchResult | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
 
   const handleSearch = (q: string) => {
     setQuery(q);
     setSelected(null);
-    setIsSearching(true);
     doSearch({ query: q, page: 1, pageSize: 20 });
   };
 
   const handleClear = () => {
     setQuery('');
     setSelected(null);
-    setIsSearching(false);
   };
 
   return (
@@ -44,13 +40,13 @@ const BrowsePage: React.FC<Props> = ({ selectedCategory, onCategorySelect }) => 
       />
 
       {/* Search mode */}
-      {isSearching && (
+      {query && (
         <div className="flex-1 overflow-y-auto p-4">
-          {loading && (
+          {searchLoading && (
             <div className="text-slate-400 text-center py-8 text-sm">搜索中…</div>
           )}
 
-          {!loading && searchTotal > 0 && (
+          {!searchLoading && searchTotal > 0 && (
             <>
               <div className="text-xs text-slate-400 mb-3">
                 找到 {searchTotal.toLocaleString()} 个结果
@@ -87,7 +83,7 @@ const BrowsePage: React.FC<Props> = ({ selectedCategory, onCategorySelect }) => 
             </>
           )}
 
-          {!loading && query && searchTotal === 0 && (
+          {!searchLoading && query && searchTotal === 0 && (
             <div className="text-center text-slate-400 py-8 text-sm">
               未找到匹配「{query}」的文件
             </div>
@@ -96,8 +92,8 @@ const BrowsePage: React.FC<Props> = ({ selectedCategory, onCategorySelect }) => 
       )}
 
       {/* Browse mode */}
-      {!isSearching && (
-        <FileList files={files} total={fileTotal} />
+      {!query && (
+        <FileList files={files} total={fileTotal} loading={filesLoading} page={page} pageSize={pageSize} onPageChange={setPage} />
       )}
     </div>
   );
