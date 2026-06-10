@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
@@ -161,6 +161,9 @@ function handleParseResult(result: ParserResult): void {
 
   const classification = classify(filename, contentSample, categories, allRules, config.classifier.threshold);
 
+  // Store text preview for fast re-classification later
+  db.setContentPreview(fileId, text);
+
   db.setFileCategory(fileId, classification.categoryId);
   if (searchableContent) {
     db.upsertFts(fileId, searchableContent, filename);
@@ -182,68 +185,79 @@ function handleParseResult(result: ParserResult): void {
   }
 }
 
-function scanDirectory(dir: string): void {
+async function scanDirectory(dir: string): Promise<void> {
   if (!fs.existsSync(dir)) return;
   const entries = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const dirent = entry as fs.Dirent & { parentPath?: string; path?: string };
-    const filePath = path.join(dirent.parentPath || dirent.path || dir, entry.name);
-    const ext = path.extname(entry.name).toLowerCase();
-    if (!['.pdf', '.docx', '.xlsx', '.pptx'].includes(ext)) continue;
-    try {
-      const stat = fs.statSync(filePath);
-      const fileBuffer: Buffer = fs.readFileSync(filePath).slice(0, 65536);
-      const contentHash = require('crypto').createHash('md5').update(fileBuffer).digest('hex');
-      const fileId = db.upsertFile({
-        path: filePath,
-        name: entry.name,
-        ext,
-        size: stat.size,
-        modifiedAt: stat.mtimeMs,
-        contentHash,
-      });
-      enqueueParse(filePath, fileId, ext);
-      console.log(`[DocHub] Scanned: ${entry.name}`);
-    } catch (e: any) {
-      console.error(`[DocHub] Scan error ${entry.name}:`, e.message);
-    }
+
+  const CONCURRENCY = 20;
+  for (let i = 0; i < entries.length; i += CONCURRENCY) {
+    const batch = entries.slice(i, i + CONCURRENCY);
+    const tasks = batch.map(async (entry) => {
+      if (!entry.isFile()) return;
+      const dirent = entry as fs.Dirent & { parentPath?: string; path?: string };
+      const filePath = path.join(dirent.parentPath || dirent.path || dir, entry.name);
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!['.pdf', '.docx', '.xlsx', '.pptx'].includes(ext)) return;
+
+      try {
+        const stat = await fs.promises.stat(filePath);
+        const existing = db.getFileStat(filePath);
+        const isNew = !existing;
+        // Round to integer — DB column is INTEGER, truncates fractional ms
+        const mtimeMs = Math.floor(stat.mtimeMs);
+        const contentChanged = isNew || existing.modified_at !== mtimeMs || existing.size !== stat.size;
+        const needsParse = isNew || contentChanged || existing.status === 'pending' || existing.status === 'error';
+
+        if (needsParse) {
+          let contentHash = existing?.content_hash || '';
+          if (contentChanged) {
+            const fd = await fs.promises.open(filePath, 'r');
+            const buf = Buffer.alloc(65536);
+            await fd.read(buf, 0, 65536, 0);
+            await fd.close();
+            contentHash = require('crypto').createHash('md5').update(buf).digest('hex');
+          }
+
+          const fileId = db.upsertFile({
+            path: filePath, name: entry.name, ext,
+            size: stat.size, modifiedAt: mtimeMs, contentHash,
+          });
+          enqueueParse(filePath, fileId, ext);
+          console.log(`[DocHub] Scanned: ${entry.name}`);
+        }
+      } catch (e: any) {
+        // File may be locked or deleted - skip silently
+      }
+    });
+
+    await Promise.all(tasks);
+    // Yield to event loop
+    await new Promise(r => setTimeout(r, 0));
   }
 }
 
 function onFileChanged(payload: { path: string; event: string }): void {
   console.log(`[DocHub] File event: ${payload.event} - ${payload.path}`);
-  if (payload.event === 'unlink') {
-    return;
-  }
+  if (payload.event === 'unlink') return;
 
   const name = path.basename(payload.path);
   const ext = path.extname(payload.path).toLowerCase();
-  let size = 0;
-  let mtime = Date.now();
-  let contentHash = '';
 
-  try {
-    const stat = fs.statSync(payload.path);
-    size = stat.size;
-    mtime = stat.mtimeMs;
-    const fileBuffer = fs.readFileSync(payload.path).slice(0, 65536);
-    contentHash = require('crypto').createHash('md5').update(fileBuffer).digest('hex');
-  } catch (e: any) {
-    console.error(`[DocHub] Cannot read file ${payload.path}:`, e.message);
-    return;
-  }
-
-  const fileId = db.upsertFile({
-    path: payload.path,
-    name,
-    ext,
-    size,
-    modifiedAt: mtime,
-    contentHash,
-  });
-
-  enqueueParse(payload.path, fileId, ext);
+  // Async handling: read file and enqueue
+  const fp = payload.path;
+  (async () => {
+    try {
+      const stat = fs.statSync(fp);
+      const fileBuffer = fs.readFileSync(fp).slice(0, 65536);
+      const contentHash = require('crypto').createHash('md5').update(fileBuffer).digest('hex');
+      const fileId = db.upsertFile({
+        path: fp, name, ext, size: stat.size, modifiedAt: Math.floor(stat.mtimeMs), contentHash,
+      });
+      enqueueParse(fp, fileId, ext);
+    } catch (e: any) {
+      console.error(`[DocHub] Cannot read file ${fp}:`, e.message);
+    }
+  })();
 }
 
 function createWindow(): void {
@@ -260,7 +274,7 @@ function createWindow(): void {
     },
   });
 
-  if (process.env.NODE_ENV === 'development') {
+  if (!app.isPackaged) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
     mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
@@ -296,6 +310,8 @@ const menuTemplate: Electron.MenuItemConstructorOptions[] = [
 ];
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
+
+  // Phase 1: Fast, necessary init before window shows
   initPaths();
   ensureDirectories();
   saveDefaultConfig();
@@ -303,6 +319,7 @@ app.whenReady().then(async () => {
   db = new DocDatabase(dbPath);
   seedDefaultCategories();
 
+  // Set up watcher (don't start yet)
   watcher = new FileWatcher({
     paths: config.watch.paths,
     exclude: config.watch.exclude,
@@ -310,20 +327,59 @@ app.whenReady().then(async () => {
   });
   watcher.on('file-changed', onFileChanged);
 
+  // Register IPC so frontend can call APIs immediately
   registerIpcHandlers(db, watcher, { enqueue: enqueueParse }, config, scanDirectory, watchedPaths);
+
+  // Reclassify-all handler: uses stored content_preview for instant re-classification
+  ipcMain.handle(IPC.RECLASSIFY_ALL, async () => {
+    const files = db.getAllFiles();
+    const categories = db.getAllCategories();
+    const allRules = db.getAllEnabledRules().map((r: any) => ({
+      id: r.id,
+      categoryId: r.category_id,
+      field: r.field,
+      operator: r.operator,
+      value: JSON.parse(r.value),
+      weight: r.weight,
+      enabled: r.enabled !== 0,
+    }));
+
+    let changed = 0;
+    for (const f of files) {
+      const contentSample = (f.content_preview || '').slice(0, config.classifier.contentSampleBytes);
+      const result = classify(f.name, contentSample, categories, allRules, config.classifier.threshold);
+      if (result.categoryId !== f.category_id) {
+        db.setFileCategory(f.id, result.categoryId);
+        changed++;
+      }
+      // Fix stuck pending/error status
+      if (f.status === 'pending' || f.status === 'error') {
+        db.updateFileStatus(f.id, 'parsed');
+      }
+    }
+    return { total: files.length, changed };
+  });
+
+  // Show window immediately — don't wait for scanning
   createWindow();
 
-  if (config.watch.paths.length > 0) {
-    watcher.start();
-  }
+  // Phase 2: Defer heavy I/O to after window is visible
+  setImmediate(() => {
+    if (config.watch.paths.length > 0) {
+      watcher.start();
+    }
 
-  // AUTO-TEST: scan test directory
-  const testDir = 'C:/Users/Administrator/Desktop/DocHub测试';
-  if (fs.existsSync(testDir)) {
-    console.log(`[DocHub] Auto-scanning test directory: ${testDir}`);
-    scanDirectory(testDir);
-    watcher.updatePaths([testDir]);
-  }
+    // Auto-scan test directory in background (don't block UI)
+    const testDir = 'C:/Users/Administrator/Desktop/DocHub测试';
+    if (fs.existsSync(testDir)) {
+      console.log(`[DocHub] Auto-scanning test directory: ${testDir}`);
+      // Use setTimeout to let the window render first
+      setTimeout(() => {
+        scanDirectory(testDir).catch(e => console.error('[DocHub] Scan error:', e));
+        watcher.updatePaths([testDir]);
+      }, 500);
+    }
+  });
 });
 
 app.on('window-all-closed', () => {

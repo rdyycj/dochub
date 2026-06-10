@@ -1,11 +1,21 @@
 import React from 'react';
 import { useCategories } from '../hooks/useIPC';
 import { Category } from '../../shared/types';
+import Icon from './Icon';
 
 interface Props {
   selectedId: number | null | undefined;
   onSelect: (id: number | null) => void;
 }
+
+const iconMap: Record<string, string> = {
+  'file-contract': 'file-text',
+  'receipt': 'receipt',
+  'chart-bar': 'chart',
+  'user': 'users',
+  'code': 'code',
+  'gavel': 'shield',
+};
 
 const CategoryTree: React.FC<Props> = ({ selectedId, onSelect }) => {
   const { categories } = useCategories();
@@ -17,50 +27,44 @@ const CategoryTree: React.FC<Props> = ({ selectedId, onSelect }) => {
 
   const tree = buildTree(categories, null);
 
+  const baseClass = (active: boolean) =>
+    `flex items-center gap-2 px-2 py-1 rounded text-[12px] cursor-pointer transition-colors duration-200 ${
+      active
+        ? 'bg-slate-700 text-white'
+        : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+    }`;
+
   const renderNode = (node: Category, depth: number) => (
     <React.Fragment key={node.id}>
       <div
-        className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded text-sm hover:bg-gray-100 ${
-          selectedId === node.id ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700'
-        }`}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
+        className={baseClass(selectedId === node.id)}
+        style={{ paddingLeft: `${8 + depth * 14}px` }}
         onClick={() => onSelect(node.id)}
       >
-        <span>{node.icon === 'file-contract' ? '📄' : node.icon === 'receipt' ? '🧾' :
-                node.icon === 'chart-bar' ? '📊' : node.icon === 'user' ? '👤' :
-                node.icon === 'code' ? '⚙️' : node.icon === 'gavel' ? '📋' : '📁'}</span>
-        <span>{node.name}</span>
+        <Icon name={(iconMap[node.icon] || 'folder') as any} size={14} className="shrink-0" />
+        <span className="flex-1 truncate">{node.name}</span>
       </div>
       {node.children?.map((child) => renderNode(child, depth + 1))}
     </React.Fragment>
   );
 
   return (
-    <div className="w-56 bg-white border-r border-gray-200 flex flex-col h-full">
-      <div className="p-3 border-b border-gray-200">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">分类目录</h2>
+    <div className="py-0.5">
+      <div
+        className={baseClass(selectedId === undefined)}
+        onClick={() => onSelect(undefined as any)}
+      >
+        <Icon name="folder-open" size={14} className="shrink-0" />
+        <span className="flex-1">全部文件</span>
       </div>
-      <div className="flex-1 overflow-y-auto py-1">
-        <div
-          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded text-sm hover:bg-gray-100 ${
-            selectedId === undefined ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700'
-          }`}
-          onClick={() => onSelect(undefined as any)}
-        >
-          <span>📂</span>
-          <span>全部文件</span>
-        </div>
-        <div
-          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded text-sm hover:bg-gray-100 ${
-            selectedId === null ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-700'
-          }`}
-          onClick={() => onSelect(null)}
-        >
-          <span>📭</span>
-          <span>未分类</span>
-        </div>
-        {tree.map((node) => renderNode(node, 0))}
+      <div
+        className={baseClass(selectedId === null)}
+        onClick={() => onSelect(null)}
+      >
+        <Icon name="inbox" size={14} className="shrink-0" />
+        <span className="flex-1">未分类</span>
       </div>
+      {tree.map((node) => renderNode(node, 0))}
     </div>
   );
 };

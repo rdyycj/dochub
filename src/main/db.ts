@@ -16,6 +16,16 @@ export class DocDatabase {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.initSchema();
+    this.migrate();
+  }
+
+  private migrate(): void {
+    // Add content_preview column if upgrading from older schema
+    try {
+      this.db.exec('ALTER TABLE files ADD COLUMN content_preview TEXT DEFAULT \'\'');
+    } catch {
+      // Column already exists — ignore
+    }
   }
 
   private initSchema(): void {
@@ -30,7 +40,8 @@ export class DocDatabase {
         content_hash TEXT,
         category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
         indexed_at INTEGER,
-        status TEXT DEFAULT 'pending'
+        status TEXT DEFAULT 'pending',
+        content_preview TEXT DEFAULT ''
       );
 
       CREATE TABLE IF NOT EXISTS categories (
@@ -131,6 +142,21 @@ export class DocDatabase {
     return this.db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
   }
 
+  getFileStat(filePath: string): any {
+    return this.db.prepare(
+      'SELECT id, modified_at, size, content_hash, status FROM files WHERE path = ?'
+    ).get(filePath);
+  }
+
+  getAllFiles(): any[] {
+    return this.db.prepare('SELECT id, name, path, ext, category_id, status, content_preview FROM files').all();
+  }
+
+  setContentPreview(fileId: number, text: string): void {
+    this.db.prepare('UPDATE files SET content_preview = ? WHERE id = ?')
+      .run(text.slice(0, 50000), fileId);
+  }
+
   getPendingFiles(limit: number = 100): any[] {
     return this.db.prepare("SELECT * FROM files WHERE status = 'pending' ORDER BY modified_at DESC LIMIT ?").all(limit);
   }
@@ -162,7 +188,12 @@ export class DocDatabase {
   // ---- Rule CRUD ----
 
   getRulesByCategory(categoryId: number): any[] {
-    return this.db.prepare('SELECT * FROM rules WHERE category_id = ? AND enabled = 1').all(categoryId);
+    return this.db.prepare(
+      'SELECT id, field, operator, value, weight, enabled FROM rules WHERE category_id = ?'
+    ).all(categoryId).map((r: any) => ({
+      ...r,
+      value: JSON.parse(r.value),
+    }));
   }
 
   getAllEnabledRules(): any[] {

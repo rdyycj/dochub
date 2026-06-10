@@ -6,9 +6,22 @@ import { Category } from '../../shared/types';
 const SettingsPage: React.FC = () => {
   const { categories, refresh } = useCategories();
   const [selectedCat, setSelectedCat] = useState<Category | null>(null);
+  const [currentKeywords, setCurrentKeywords] = useState<string[]>([]);
   const [watchDirs, setWatchDirs] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
+
+  const handleSelectCategory = async (cat: Category) => {
+    setSelectedCat(cat);
+    // Load existing rules for this category
+    try {
+      const rules: any[] = await window.docHub.getCategoryRules(cat.id);
+      const keywords = rules.flatMap((r: any) => r.value || []);
+      setCurrentKeywords(keywords);
+    } catch {
+      setCurrentKeywords([]);
+    }
+  };
 
   const handleSaveRule = async (keywords: string[]) => {
     if (!selectedCat) return;
@@ -20,7 +33,10 @@ const SettingsPage: React.FC = () => {
       enabled: true,
     }));
     await window.docHub.saveRules(selectedCat.id, rules);
-    alert('规则已保存');
+
+    // Auto reclassify all files with new rules
+    const result: any = await window.docHub.reclassifyAll();
+    alert(`规则已保存。已将 ${result.changed} 个文件重新分类（共 ${result.total} 个文件）`);
     refresh();
   };
 
@@ -50,7 +66,7 @@ const SettingsPage: React.FC = () => {
 
   const addDirectory = (dirPath: string) => {
     const existing = watchDirs.split('\n').map(d => d.trim().toLowerCase());
-    if (existing.includes(dirPath.toLowerCase())) return; // 去重
+    if (existing.includes(dirPath.toLowerCase())) return;
     setWatchDirs(prev => prev + (prev ? '\n' : '') + dirPath);
   };
 
@@ -84,14 +100,12 @@ const SettingsPage: React.FC = () => {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      // Use Electron's webUtils to get the real filesystem path
       try {
         const realPath = window.docHub.getPathForFile(file);
         if (realPath) {
           addDirectory(realPath);
         }
       } catch {
-        // fallback: try .path property (may not work in sandbox)
         const f = file as any;
         if (f.path) addDirectory(f.path);
       }
@@ -100,12 +114,14 @@ const SettingsPage: React.FC = () => {
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      <h2 className="text-xl font-bold mb-6">设置</h2>
+      <h2 className="text-lg font-bold mb-6 text-slate-800">设置</h2>
 
       {/* Watch directories */}
       <section className="mb-8">
-        <h3 className="font-medium mb-2">监控目录</h3>
-        <p className="text-xs text-gray-500 mb-2">拖拽文件夹到下方区域，或手动输入路径</p>
+        <h3 className="font-medium text-sm mb-2 text-slate-700">监控目录</h3>
+        <p className="text-xs text-slate-400 mb-2">
+          拖拽文件夹到下方区域，或手动输入路径
+        </p>
 
         <div
           onDragEnter={handleDragEnter}
@@ -114,8 +130,8 @@ const SettingsPage: React.FC = () => {
           onDrop={handleDrop}
           className={`relative border-2 border-dashed rounded-lg transition-colors ${
             isDragging
-              ? 'border-blue-400 bg-blue-50'
-              : 'border-gray-300 hover:border-gray-400'
+              ? 'border-slate-400 bg-slate-50'
+              : 'border-slate-200 hover:border-slate-300'
           }`}
         >
           <textarea
@@ -125,27 +141,29 @@ const SettingsPage: React.FC = () => {
             onChange={(e) => setWatchDirs(e.target.value)}
           />
           {isDragging && (
-            <div className="absolute inset-0 flex items-center justify-center bg-blue-50/80 rounded-lg pointer-events-none">
-              <span className="text-blue-600 font-medium text-lg">📂 松开以添加文件夹</span>
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-50/80 rounded-lg pointer-events-none">
+              <span className="text-slate-600 font-medium text-lg">
+                📂 松开以添加文件夹
+              </span>
             </div>
           )}
         </div>
 
         <div className="flex gap-2 mt-2">
           <button
-            className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+            className="px-3 py-1.5 bg-slate-200 text-slate-700 text-sm rounded hover:bg-slate-300 transition-colors"
             onClick={handlePaste}
           >
             📋 粘贴路径
           </button>
           <button
-            className="px-3 py-1.5 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+            className="px-3 py-1.5 bg-slate-200 text-slate-700 text-sm rounded hover:bg-slate-300 transition-colors"
             onClick={handleClear}
           >
             ✕ 清空
           </button>
           <button
-            className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+            className="px-4 py-1.5 bg-slate-600 text-white text-sm rounded hover:bg-slate-700 transition-colors"
             onClick={handleWatchDirs}
           >
             ▶ 开始监控
@@ -155,16 +173,18 @@ const SettingsPage: React.FC = () => {
 
       {/* Categories & Rules */}
       <section>
-        <h3 className="font-medium mb-2">分类规则管理</h3>
+        <h3 className="font-medium text-sm mb-2 text-slate-700">分类规则管理</h3>
         <div className="flex gap-4">
           <div className="w-48">
             {categories.map((cat) => (
               <div
                 key={cat.id}
-                className={`px-3 py-1.5 cursor-pointer rounded text-sm ${
-                  selectedCat?.id === cat.id ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'
+                className={`px-3 py-1.5 cursor-pointer rounded text-sm transition-colors ${
+                  selectedCat?.id === cat.id
+                    ? 'bg-slate-100 text-slate-800 font-medium'
+                    : 'hover:bg-slate-50 text-slate-600'
                 }`}
-                onClick={() => setSelectedCat(cat)}
+                onClick={() => handleSelectCategory(cat)}
               >
                 {cat.name}
               </div>
@@ -175,7 +195,7 @@ const SettingsPage: React.FC = () => {
               <RuleEditor
                 categoryId={selectedCat.id}
                 categoryName={selectedCat.name}
-                initialKeywords={[]}
+                initialKeywords={currentKeywords}
                 onSave={handleSaveRule}
               />
             )}

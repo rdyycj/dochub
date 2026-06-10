@@ -4,7 +4,7 @@ import { useSearch } from '../hooks/useIPC';
 import { SearchResult } from '../../shared/types';
 
 function highlightHtml(text: string): string {
-  return text.replace(/<mark>/g, '<mark class="bg-yellow-200">');
+  return text.replace(/<mark>/g, '<mark class="bg-slate-200">');
 }
 
 function formatSize(bytes: number): string {
@@ -30,108 +30,56 @@ const SearchPage: React.FC = () => {
     doSearch({ query: q, page: 1, pageSize: 20 });
   };
 
-  const handleOpen = async () => {
-    if (!selected) return;
-    const r: any = await window.docHub.openFile(selected.path);
-    if (!r.success) alert('无法打开文件: ' + r.error);
-  };
-
-  const handleExport = async () => {
-    if (!selected) return;
-    const r: any = await window.docHub.exportFile(selected.path);
-    if (r.success) {
-      alert('已导出到: ' + r.destPath);
-    } else if (!r.canceled) {
-      alert('导出失败: ' + r.error);
-    }
+  const handleDoubleClick = async (r: SearchResult) => {
+    const result: any = await window.docHub.openFile(r.path);
+    if (!result.success) alert('无法打开文件: ' + result.error);
   };
 
   return (
     <div className="flex flex-col h-full">
       <SearchBar onSearch={handleSearch} />
-      <div className="flex-1 flex overflow-hidden">
-        {/* Results list */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {loading && <div className="text-gray-400 text-center py-8">搜索中…</div>}
+      <div className="flex-1 overflow-y-auto p-4">
+        {loading && (
+          <div className="text-slate-400 text-center py-8 text-sm">搜索中…</div>
+        )}
 
-          {!loading && total > 0 && (
-            <>
-              <div className="text-sm text-gray-500 mb-4">找到 {total} 个结果</div>
-              {results.map((r: SearchResult) => (
+        {!loading && total > 0 && (
+          <>
+            <div className="text-xs text-slate-400 mb-3">
+              找到 {total.toLocaleString()} 个结果
+            </div>
+            {results.map((r: SearchResult) => (
+              <div
+                key={r.fileId}
+                className={`mb-2 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  selected?.fileId === r.fileId
+                    ? 'bg-slate-50 border-slate-300 border-l-2 border-l-slate-600'
+                    : 'bg-white border-slate-200 hover:bg-slate-50 border-l-2 border-l-transparent'
+                }`}
+                onClick={() => setSelected(r)}
+                onDoubleClick={() => handleDoubleClick(r)}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-medium text-sm">{r.name}</span>
+                  {r.categoryName && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded-full">
+                      {r.categoryName}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-slate-400 truncate">{r.path}</span>
+                </div>
                 <div
-                  key={r.fileId}
-                  className={`mb-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    selected?.fileId === r.fileId
-                      ? 'bg-blue-50 border-blue-300'
-                      : 'bg-white border-gray-200 hover:bg-gray-50'
-                  }`}
-                  onClick={() => setSelected(r)}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium">{r.name}</span>
-                    {r.categoryName && (
-                      <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">{r.categoryName}</span>
-                    )}
-                    <span className="text-xs text-gray-400">{r.path}</span>
-                  </div>
-                  <div
-                    className="text-sm text-gray-600"
-                    dangerouslySetInnerHTML={{ __html: highlightHtml(r.snippet) }}
-                  />
-                </div>
-              ))}
-            </>
-          )}
+                  className="text-xs text-slate-500"
+                  dangerouslySetInnerHTML={{ __html: highlightHtml(r.snippet) }}
+                />
+              </div>
+            ))}
+          </>
+        )}
 
-          {!loading && query && total === 0 && (
-            <div className="text-center text-gray-400 py-8">未找到匹配「{query}」的文件</div>
-          )}
-        </div>
-
-        {/* Detail panel */}
-        {selected && (
-          <div className="w-72 border-l border-gray-200 bg-white p-4 overflow-y-auto shrink-0">
-            <h3 className="font-medium text-lg mb-3 truncate" title={selected.name}>
-              {selected.name}
-            </h3>
-            <div className="space-y-2 text-sm text-gray-600 mb-4">
-              <div>
-                <span className="text-xs text-gray-400">路径</span>
-                <p className="text-xs font-mono break-all mt-0.5">{selected.path}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-400">大小</span>
-                <p>{formatSize(selected.size)}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-400">修改时间</span>
-                <p>{formatDate(selected.modifiedAt)}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-400">类型</span>
-                <p>{selected.ext}</p>
-              </div>
-              {selected.categoryName && (
-                <div>
-                  <span className="text-xs text-gray-400">分类</span>
-                  <p>{selected.categoryName}</p>
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <button
-                className="w-full px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-                onClick={handleOpen}
-              >
-                📂 打开文件
-              </button>
-              <button
-                className="w-full px-4 py-2 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
-                onClick={handleExport}
-              >
-                💾 导出到...
-              </button>
-            </div>
+        {!loading && query && total === 0 && (
+          <div className="text-center text-slate-400 py-8 text-sm">
+            未找到匹配「{query}」的文件
           </div>
         )}
       </div>

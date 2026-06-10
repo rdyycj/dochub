@@ -6,6 +6,8 @@ const IPC = {
   FILES_LIST: 'files:list',
   CATEGORIES_LIST: 'categories:list',
   RULES_SAVE: 'rules:save',
+  RULES_GET_BY_CATEGORY: 'rules:get-by-category',
+  RECLASSIFY_ALL: 'classify:reclassify-all',
   WATCH_START: 'watch:start',
   FILE_RETRY: 'file:retry',
   FILE_OPEN: 'file:open',
@@ -20,6 +22,10 @@ const api = {
   listCategories: () => ipcRenderer.invoke(IPC.CATEGORIES_LIST),
   saveRules: (categoryId: number, rules: any[]) =>
     ipcRenderer.invoke(IPC.RULES_SAVE, { categoryId, rules }),
+  getCategoryRules: (categoryId: number) =>
+    ipcRenderer.invoke(IPC.RULES_GET_BY_CATEGORY, { categoryId }),
+  reclassifyAll: () =>
+    ipcRenderer.invoke(IPC.RECLASSIFY_ALL),
   startWatch: (directories: string[]) =>
     ipcRenderer.invoke(IPC.WATCH_START, { directories }),
   retryFile: (fileId: number) =>

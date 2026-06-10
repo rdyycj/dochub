@@ -1,17 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import Layout from './components/Layout';
-import BrowsePage from './pages/BrowsePage';
-import SearchPage from './pages/SearchPage';
-import SettingsPage from './pages/SettingsPage';
+
+const BrowsePage = lazy(() => import('./pages/BrowsePage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+
+const PageLoader: React.FC = () => (
+  <div className="flex-1 flex items-center justify-center bg-slate-50">
+    <div className="text-slate-400 text-sm">加载中...</div>
+  </div>
+);
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('browse');
+  const [selectedCategory, setSelectedCategory] = useState<number | null | undefined>(undefined);
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab}>
-      {activeTab === 'browse' && <BrowsePage />}
-      {activeTab === 'search' && <SearchPage />}
-      {activeTab === 'settings' && <SettingsPage />}
+    <Layout
+      activeTab={activeTab}
+      onTabChange={(tab) => {
+        setActiveTab(tab);
+        setSelectedCategory(undefined);
+      }}
+      selectedCategory={selectedCategory}
+      onCategorySelect={setSelectedCategory}
+    >
+      <Suspense fallback={<PageLoader />}>
+        {activeTab === 'browse' && (
+          <BrowsePage
+            selectedCategory={selectedCategory}
+            onCategorySelect={setSelectedCategory}
+          />
+        )}
+        {activeTab === 'settings' && <SettingsPage />}
+      </Suspense>
     </Layout>
   );
 };

@@ -3,3 +3,5 @@ dist/
 release/
 *.db
 .env
+.superpowers/
+tests/screenshots/

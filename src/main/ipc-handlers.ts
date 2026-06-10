@@ -59,6 +59,10 @@ export function registerIpcHandlers(
     db.replaceCategoryRules(categoryId, rules);
   });
 
+  ipcMain.handle(IPC.RULES_GET_BY_CATEGORY, (_event, { categoryId }) => {
+    return db.getRulesByCategory(categoryId);
+  });
+
   // ---- Watch start ----
   ipcMain.handle(IPC.WATCH_START, (_event, { directories }) => {
     // Merge with existing watched paths

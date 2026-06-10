@@ -5,6 +5,8 @@ export const IPC = {
   FILES_LIST: 'files:list',
   CATEGORIES_LIST: 'categories:list',
   RULES_SAVE: 'rules:save',
+  RULES_GET_BY_CATEGORY: 'rules:get-by-category',
+  RECLASSIFY_ALL: 'classify:reclassify-all',
   WATCH_START: 'watch:start',
   FILE_RETRY: 'file:retry',
   FILE_OPEN: 'file:open',
